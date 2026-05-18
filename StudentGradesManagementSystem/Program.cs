@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
 using System.Linq;
+using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -54,16 +56,23 @@ namespace StudentGradesManagementSystem
             ConsoleColor.DarkCyan,
             ConsoleColor.Gray,
             ConsoleColor.DarkYellow,
-            ConsoleColor.DarkGray
+            ConsoleColor.DarkGray,
+            ConsoleColor.DarkGreen
         };
 
         static void Main(string[] args)
         {
             Console.OutputEncoding = System.Text.Encoding.UTF8;
 
+            bool subCon = true;         // Restrics user to input grades between 3 and 5
+            bool subAvgCon = false;     // Convert all failing average subject grades to 5.0
+            bool semAvgCon = false;     // Convert all failing average semester grades to 5.0
+            bool GWAAvgCon = false;     // Convert all failing average overall grades to 5.0
+
             Debug();
             int student = -1;
             int op = -1;
+            bool fromAddStudent = false;
             while (true)
             {
                 if (op == -1)
@@ -255,6 +264,7 @@ namespace StudentGradesManagementSystem
                                 {
                                     student = STUDENTS.GetLength(0) - 1;
                                     op = 2;
+                                    fromAddStudent = true;
                                     break;
                                 }
                             }
@@ -274,19 +284,182 @@ namespace StudentGradesManagementSystem
                 else if (op == 2)
                 {
                     if (student == -1)
-                        student = PickStudent();
+                    {
+                        bool firstAttempt = true;
+                        string[,] studentsInfo = new string[STUDENTS.GetLength(0), 5];
 
+                        for (int j = 0; j < STUDENTS.GetLength(0); j++)
+                        {
+                            double GWA = 0;
+                            string remark = "INCOMPLETE";
+                            int color = 6;
+                            int[] totalCountedUnits = new int[2];
+                            double[] generalAverage = { 0, 0 };
+                            bool isComplete = true;
+
+                            for (int semester = 0; semester < 2; semester++)
+                            {
+                                for (int i = 0; i < SUBJECTS.GetLength(1); i++)
+                                {
+                                    int units;
+                                    int.TryParse(SUBJECTS[semester, i, 2], out units);
+
+                                    double midTerm = Convert.ToDouble(GetGrade(j, semester, i, 0));
+                                    double finalTerm = Convert.ToDouble(GetGrade(j, semester, i, 1));
+
+                                    if (midTerm == 0 || finalTerm == 0 || midTerm == 8.8 || finalTerm == 8.8)
+                                    {
+                                        if (units != 0)
+                                            isComplete = false;
+                                    }
+                                    else if (midTerm != 9.9 && finalTerm != 9.9)
+                                    {
+                                        double average = (midTerm + finalTerm) / 2;
+                                        if (units != 0)
+                                        {
+                                            double computedGrade;
+
+                                            if (subAvgCon && average > 3)
+                                                computedGrade = 5.0 * units;
+                                            else
+                                                computedGrade = average * units;
+
+                                            generalAverage[semester] += computedGrade;
+                                            GWA += computedGrade;
+                                            totalCountedUnits[semester] += units;
+                                        }
+                                    }
+
+                                }
+
+                                if (totalCountedUnits[semester] > 0)
+                                    generalAverage[semester] /= totalCountedUnits[semester];
+                            }
+
+                            if (totalCountedUnits[0] + totalCountedUnits[1] > 0)
+                                GWA /= totalCountedUnits[0] + totalCountedUnits[1];
+
+                            if (GWA >= 1 && GWA <= 3)
+                            {
+                                remark = "PASSED";
+                                color = 4;
+                            }
+                            else if (GWA > 3 && GWA <= 5)
+                            {
+                                if (GWAAvgCon)
+                                    GWA = 5.0;
+                                remark = "FAILED";
+                                color = 5;
+                            }
+
+                            if (!isComplete)
+                            {
+                                remark = "INCOMPLETE";
+                                color = 6;
+                            }
+
+                            if (semAvgCon)
+                            {
+                                if (generalAverage[0] > 3)
+                                    generalAverage[0] = 5.0;
+                                if (generalAverage[1] > 3)
+                                    generalAverage[1] = 5.0;
+                            }
+
+                            if (GWA == 0)
+                                studentsInfo[j, 0] = "--";
+                            else
+                                studentsInfo[j, 0] = GWA.ToString("F2");
+                            studentsInfo[j, 1] = remark;
+                            studentsInfo[j, 2] = color.ToString();
+                            studentsInfo[j, 3] = generalAverage[0].ToString("F2");
+                            studentsInfo[j, 4] = generalAverage[1].ToString("F2");
+                        }
+
+                        string padLeft;
+                        while (true)
+                        {
+                            padLeft = GetPadding(95);
+
+                            string[] labels =
+                            {
+                                padLeft + "╔════╦══════════════╦══════════════════════════════╦═════════╦═════════╦═════════╦════════════╗\n",
+                                padLeft + "║ ", "No", " ║ ", "ID", "           ║ ", "Name", "                         ║ ", "1st Sem", " ║ ", "2nd Sem", " ║ ", "GWA", "     ║ ", "Remarks", "    ║\n",
+                                padLeft + "╠════╬══════════════╬══════════════════════════════╬═════════╬═════════╬═════════╬════════════╣\n"
+                            };
+
+                            PrintColor(labels, Colors, new int[] { 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0 });
+
+                            for (int j = 0; j < STUDENTS.GetLength(0); j++)
+                                PrintColor(new string[] { padLeft + "║ ", (j + 1).ToString().PadLeft(2, '0'), " ║ ", Truncate(STUDENTS[j, 0], 12), " ║ ", Truncate(STUDENTS[j, 1], 28), " ║ ", studentsInfo[j, 3].PadRight(7), " ║ ", studentsInfo[j, 4].PadRight(7), " ║ ", studentsInfo[j, 0].PadRight(7), " ║ ", studentsInfo[j, 1].PadRight(10), " ║\n" }, Colors, new int[] { 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, int.Parse(studentsInfo[j, 2]), 0 });
+
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine(padLeft + "╚════╩══════════════╩══════════════════════════════╩═════════╩═════════╩═════════╩════════════╝\n");
+                            Console.ResetColor();
+
+                            string input = "";
+                            try
+                            {
+                                if (!firstAttempt)
+                                {
+                                    Console.ForegroundColor = ConsoleColor.Red;
+                                    Console.WriteLine(padLeft + "✗ Not found. Try again.");
+                                    Console.ResetColor();
+                                }
+                                Console.Write(padLeft + "➤ Enter No/ID/Name ('Q' to exit): ");
+                                input = Console.ReadLine().ToLower();
+
+                                if (input == "q")
+                                {
+                                    Console.Clear();
+                                    op = -1;
+                                    break;
+                                }
+                                int option = int.Parse(input);
+
+                                if (option > 0 && option <= STUDENTS.GetLength(0))
+                                {
+                                    Console.Clear();
+                                    student = option - 1;
+                                    break;
+                                }
+                            }
+                            catch (Exception)
+                            {
+
+                            }
+
+                            for (int i = 0; i < STUDENTS.GetLength(0); i++)
+                            {
+                                if (input == STUDENTS[i, 0].ToLower() || input == STUDENTS[i, 1].ToLower())
+                                {
+                                    student = i;
+                                    break;
+                                }
+                            }
+
+                            if (student != -1)
+                            {
+                                Console.Clear();
+                                break;
+                            }
+
+                            Console.Clear();
+                            firstAttempt = false;
+                        }
+                    }
+                    
                     if (student != -1)
                     {
                         //Console.WriteLine()
-                        int boxWidth = Math.Max(Math.Max(STUDENTS[student, 0].Length, STUDENTS[student, 1].Length) + 11, 30);
+                        //int boxWidth = Math.Max(Math.Max(STUDENTS[student, 0].Length, STUDENTS[student, 1].Length) + 11, 30);
                         string padLeft = GetPadding(51);
 
                         int[] tableColorIndexes =
                         {
                             0,
-                            0, 1, 2, 0,
-                            0, 1, 2, 0,
+                            0, 1, 2, 0, 1, 2, 2, 0,
+                            0, 1, 2, 0, 1, 2, 4, 0,
                             0,
                             0,
                             0, 3, 0, 3, 0,
@@ -294,6 +467,7 @@ namespace StudentGradesManagementSystem
                             0, 1, 2, 0, 1, 2, 0,
                             0, 1, 2, 0, 1, 2, 0,
                             0, 1, 2, 0, 1, 2, 0,
+                            0, 1, 2, 4, 0, 1, 2, 4, 0,
                             0,
                             0, 3, 0, 3, 0,
                             0,
@@ -317,7 +491,10 @@ namespace StudentGradesManagementSystem
                             double[] generalAverage = { 0, 0 };
                             string[] generalAverageStr = new string[2];
                             bool[] isComplete = { true, true };
-                            string generalStatus;
+                            //string generalStatus;
+                            double GWA = 0;
+                            string GWARemarks = "PASSED";
+                            int GWAColor = 4;
                             string[,,] grades = new string[2, SUBJECTS.GetLength(1), 2];
                             string[,] averages = new string[2, SUBJECTS.GetLength(1)];
                             string[,] remarks = new string[2, SUBJECTS.GetLength(1)];
@@ -327,7 +504,7 @@ namespace StudentGradesManagementSystem
                             {
                                 for (int i = 0; i < SUBJECTS.GetLength(1); i++)
                                 {
-                                    int units = -1;
+                                    int units;
                                     if (int.TryParse(SUBJECTS[semester, i, 2], out units))
                                         totalUnits[semester] += units;
 
@@ -336,14 +513,6 @@ namespace StudentGradesManagementSystem
 
                                     grades[semester, i, 0] = midTerm.ToString("F2");
                                     grades[semester, i, 1] = finalTerm.ToString("F2");
-                                    //if (midTerm > 3.0 && midTerm <= 5)
-                                    //    grades[semester, i, 0] = "5.0";
-                                    //else if (midTerm >= 1 && midTerm <= 3)
-                                    //    grades[semester, i, 0] = midTerm.ToString("F2");
-                                    //if (finalTerm > 3.0 && finalTerm <= 5)
-                                    //    grades[semester, i, 1] = "5.0";
-                                    //else if (finalTerm >= 1 && finalTerm <= 3)
-                                    //    grades[semester, i, 1] = finalTerm.ToString("F2");
 
                                     if (midTerm == 8.8 || finalTerm == 8.8)
                                     {
@@ -353,7 +522,7 @@ namespace StudentGradesManagementSystem
                                             grades[semester, i, 1] = "INC";
                                         averages[semester, i] = "--";
                                         remarks[semester, i] = "INCOMPLETE";
-                                        if (units != -1)
+                                        if (units != 0)
                                             isComplete[semester] = false;
                                     }
                                     if (midTerm == 0 || finalTerm == 0)
@@ -364,7 +533,7 @@ namespace StudentGradesManagementSystem
                                             grades[semester, i, 1] = "--";
                                         averages[semester, i] = "--";
                                         remarks[semester, i] = "PENDING";
-                                        if (units != -1)
+                                        if (units != 0)
                                             isComplete[semester] = false;
                                     }
                                     if (midTerm == 9.9 || finalTerm == 9.9)
@@ -381,9 +550,17 @@ namespace StudentGradesManagementSystem
                                     if (remarks[semester, i] == null)
                                     {
                                         double average = (midTerm + finalTerm) / 2;
-                                        if (units != -1)
+                                        if (units != 0)
                                         {
-                                            generalAverage[semester] += average * units;
+                                            double computedGrade;
+
+                                            if (subAvgCon && average > 3)
+                                                computedGrade = 5.0 * units;
+                                            else
+                                                computedGrade = average * units;
+
+                                            generalAverage[semester] += computedGrade;
+                                            GWA += computedGrade;
                                             totalCountedUnits[semester] += units;
                                         }
 
@@ -397,7 +574,10 @@ namespace StudentGradesManagementSystem
                                         {
                                             status[semester, 1]++;
                                             remarks[semester, i] = "FAILED";
-                                            averages[semester, i] = "5.0";
+                                            if (subAvgCon)
+                                                averages[semester, i] = "5.0";
+                                            else
+                                                averages[semester, i] = average.ToString("F2");
                                         }
                                     }
                                     else if (remarks[semester, i] == "INCOMPLETE")
@@ -409,15 +589,40 @@ namespace StudentGradesManagementSystem
 
                                 if (totalCountedUnits[semester] > 0)
                                     generalAverage[semester] /= totalCountedUnits[semester];
-                                if (generalAverage[semester] > 3)
-                                    generalAverage[semester] = 5.0;
 
+                                tableColorIndexes[49 + semester * 4] = 4;
                                 if (!isComplete[semester])
+                                {
                                     generalAverageStr[semester] = "INCOMPLETE";
-                                else if (generalAverage[semester] == 5.0)
+                                    tableColorIndexes[49 + semester * 4] = 6;
+                                }
+                                else if (generalAverage[semester] > 3 && generalAverage[semester] <= 5.0)
+                                {
+                                    if (semAvgCon)
+                                        generalAverage[semester] = 5.0;
                                     generalAverageStr[semester] = "FAILED";
+                                    tableColorIndexes[49 + semester * 4] = 5;
+                                }
                                 else
                                     generalAverageStr[semester] = "PASSED";
+                            }
+
+                            tableColorIndexes[15] = 4;
+                            GWA /= totalCountedUnits[0] + totalCountedUnits[1];
+                            string GWAStr = GWA.ToString("F2");
+                            if (GWAStr == "NaN")
+                                GWAStr = "--";
+                            if (!isComplete[0] || !isComplete[1])
+                            {
+                                GWARemarks = "INCOMPLETE";
+                                tableColorIndexes[15] = 6;
+                            }
+                            else if (GWA > 3)
+                            {
+                                if (GWAAvgCon)
+                                    GWA = 5.0;
+                                GWARemarks = "FAILED";
+                                tableColorIndexes[15] = 5;
                             }
 
                             if (selectedSemester == -1)
@@ -426,16 +631,17 @@ namespace StudentGradesManagementSystem
                                 string[] table =
                                 {
                                     "\n\n" +
-                                    padLeft + "╔══════════════════════════════════════════════════════════════════════════════════════════════════════╗\n",
-                                    padLeft + "║ ", "ID   : ", Truncate(STUDENTS[student, 0], 90), " ║\n",
-                                    padLeft + "║ ", "Name : ", Truncate(STUDENTS[student, 1], 90), " ║\n",
-                                    padLeft + "╚══════════════════════════════════════════════════════════════════════════════════════════════════════╝\n",
+                                    padLeft + "╔═════════════════════════════════════════════════════════════════════════╦════════════════════════════╗\n",
+                                    padLeft + "║ ", "ID   : ", Truncate(STUDENTS[student, 0], 64), " ║    ", "GWA     ", ": ", GWAStr.PadRight(10) ,"    ║\n",
+                                    padLeft + "║ ", "Name : ", Truncate(STUDENTS[student, 1], 64), " ║    ", "Remarks ", ": ", GWARemarks.PadRight(10) ,"    ║\n",
+                                    padLeft + "╚═════════════════════════════════════════════════════════════════════════╩════════════════════════════╝\n",
                                     padLeft + "╔═════════════════════════════════════════════════╗  ╔═════════════════════════════════════════════════╗\n",
                                     padLeft + "║                   ", "1ST SEMESTER", "                  ║  ║                   ", "2ND SEMESTER", "                  ║\n",
                                     padLeft + "╠═════════════════════════════════════════════════╣  ╠═════════════════════════════════════════════════╣\n",
                                     padLeft + "║ ", "Subjects", "        : " + SUBJECTS.GetLength(1).ToString().PadRight(29), " ║  ║ ", "Subjects", "        : " + SUBJECTS.GetLength(1).ToString().PadRight(29), " ║\n",
-                                    padLeft + "║ ", "Total Units", "     : " + totalUnits[0].ToString().PadRight(29)," ║  ║ ", "Total Units", "     : " + totalUnits[1].ToString().PadRight(29), " ║\n",
-                                    padLeft + "║ ", "General Average", " : " + generalAverage[0].ToString("F2").PadRight(29)," ║  ║ ", "General Average", " : " + generalAverage[1].ToString("F2").PadRight(29), " ║\n",
+                                    padLeft + "║ ", "Total Units", "     : " + totalUnits[0].ToString().PadRight(29), " ║  ║ ", "Total Units", "     : " + totalUnits[1].ToString().PadRight(29), " ║\n",
+                                    padLeft + "║ ", "General Average", " : " + generalAverage[0].ToString("F2").PadRight(29), " ║  ║ ", "General Average", " : " + generalAverage[1].ToString("F2").PadRight(29), " ║\n",
+                                    padLeft + "║ ", "Remarks", "         : ", generalAverageStr[0].PadRight(29), " ║  ║ ", "Remarks", "         : ", generalAverageStr[1].PadRight(29), " ║\n",
                                     padLeft + "╠═════════════════════════════════════════════════╣  ╠═════════════════════════════════════════════════╣\n",
                                     padLeft + "║                 ", "SUBJECT STATUS", "                  ║  ║                 ", "SUBJECT STATUS", "                  ║\n",
                                     padLeft + "╠═════════╦═════════╦═════════╦═════════╦═════════╣  ╠═════════╦═════════╦═════════╦═════════╦═════════╣\n",
@@ -463,7 +669,14 @@ namespace StudentGradesManagementSystem
                                 int option;
 
                                 if (input == "q")
+                                {
+                                    if (fromAddStudent)
+                                    {
+                                        op = -1;
+                                        fromAddStudent = false;
+                                    }
                                     break;
+                                }
                                 else if (int.TryParse(input, out option))
                                 {
                                     if (option == 1)
@@ -471,8 +684,6 @@ namespace StudentGradesManagementSystem
                                     else if (option == 2)
                                         selectedSemester = 1;
                                 }
-
-
 
                                 Console.Clear();
                             }
@@ -501,7 +712,6 @@ namespace StudentGradesManagementSystem
                                     0, 1, 2, 2, 0, 6, 0,
                                     0
                                 };
-                                padLeft = GetPadding(100);
 
                                 if (generalAverageStr[selectedSemester] == "PASSED")
                                     gradesTableBotColorIndexes[6] = 4;
@@ -511,12 +721,13 @@ namespace StudentGradesManagementSystem
 
                                 while (true)
                                 {
+                                    padLeft = GetPadding(100);
                                     string[] gradesTableTop =
                                     {
                                         "\n",
                                         padLeft + "╔═════════════════════════════════════════════════════════════════╦════════════════════════════════╗\n",
-                                        padLeft + "║ ", "ID   ", ": 123", "                                                      ║    ", "1-3", ": ", "PASSED    ", "8.8", ": ", "INC", "     ║\n",
-                                        padLeft + "║ ", "Name ", ": John", "                                                     ║    ", "5.0", ": ", "FAILED    ", "9.9", ": ", "DRP", "     ║\n",
+                                        padLeft + "║ ", "ID   ", ": " + Truncate(STUDENTS[student, 0], 56), " ║    ", "1-3", ": ", "PASSED    ", "8.8", ": ", "INC", "     ║\n",
+                                        padLeft + "║ ", "Name ", ": " + Truncate(STUDENTS[student, 1], 56), " ║    ", "5.0", ": ", "FAILED    ", "9.9", ": ", "DRP", "     ║\n",
                                         padLeft + "╚═════════════════════════════════════════════════════════════════╩════════════════════════════════╝\n",
                                         padLeft + "╔══════════════════════════════════════════════════════════════════════════════════════════════════╗\n",
                                         padLeft + "║                                        ", semesterStr + " SEMESTER GRADES", "                                       ║\n",
@@ -556,7 +767,7 @@ namespace StudentGradesManagementSystem
 
                                         if (i == selectedSubject)
                                         {
-                                            PrintColor(new string[] { padLeft + "║ ", (i + 1).ToString().PadLeft(2, '0'), " ║ ", SUBJECTS[selectedSemester, i, 0].PadRight(12), " ║ ", Truncate(SUBJECTS[selectedSemester, i, 1], 20), " ║  ", SUBJECTS[selectedSemester, i, 2], "  ║ " }, Colors, new int[] { 0, 4, 0, 4, 0, 4, 0, 4, 0 });
+                                            PrintColor(new string[] { padLeft + "║ ", (i + 1).ToString().PadLeft(2, '0'), " ║ ", Truncate(SUBJECTS[selectedSemester, i, 0], 12), " ║ ", Truncate(SUBJECTS[selectedSemester, i, 1], 23), " ║  ", SUBJECTS[selectedSemester, i, 2], "  ║ " }, Colors, new int[] { 0, 4, 0, 4, 0, 4, 0, 4, 0 });
                                             if (selectedTerm == 0)
                                             {
                                                 Console.ForegroundColor = ConsoleColor.Black;
@@ -565,12 +776,14 @@ namespace StudentGradesManagementSystem
                                                 Console.ResetColor();
                                                 Console.ForegroundColor = ConsoleColor.Cyan;
                                                 Console.Write(" ║ ");
-                                                Console.ForegroundColor = ConsoleColor.Green;
+                                                //Console.ForegroundColor = ConsoleColor.Green;
+                                                Console.ForegroundColor = Colors[finalTermColor];
                                                 Console.Write(grades[selectedSemester, i, 1].PadRight(9));
                                             }
                                             else
                                             {
-                                                Console.ForegroundColor = ConsoleColor.Green;
+                                                //Console.ForegroundColor = ConsoleColor.Green;
+                                                Console.ForegroundColor = Colors[midTermColor];
                                                 Console.Write(grades[selectedSemester, i, 0].PadRight(7));
                                                 Console.ForegroundColor = ConsoleColor.Cyan;
                                                 Console.Write(" ║ ");
@@ -583,7 +796,7 @@ namespace StudentGradesManagementSystem
                                             //); , grades[selectedSemester, i, 0].PadRight(7), " ║ ", grades[selectedSemester, i, 1].PadRight(9), " ║ ", averages[selectedSemester, i].PadRight(4), "    ║ ", remarks[selectedSemester, i].PadRight(10), " ║\n" }, Colors, gradesTableMidColorIndexes);
                                         }
                                         else
-                                            PrintColor(new string[] { padLeft + "║ ", (i + 1).ToString().PadLeft(2, '0'), " ║ ", SUBJECTS[selectedSemester, i, 0].PadRight(12), " ║ ", Truncate(SUBJECTS[selectedSemester, i, 1], 20), " ║  ", SUBJECTS[selectedSemester, i, 2], "  ║ ", grades[selectedSemester, i, 0].PadRight(7), " ║ ", grades[selectedSemester, i, 1].PadRight(9), " ║ ", averages[selectedSemester, i].PadRight(4), "    ║ ", remarks[selectedSemester, i].PadRight(10), " ║\n" }, Colors, new int[] { 0, 2, 0, 2, 0, 2, 0, 2, 0, midTermColor, 0, finalTermColor, 0, 2, 0, remarksColor, 0 });
+                                            PrintColor(new string[] { padLeft + "║ ", (i + 1).ToString().PadLeft(2, '0'), " ║ ", Truncate(SUBJECTS[selectedSemester, i, 0], 12), " ║ ", Truncate(SUBJECTS[selectedSemester, i, 1], 23), " ║  ", SUBJECTS[selectedSemester, i, 2], "  ║ ", grades[selectedSemester, i, 0].PadRight(7), " ║ ", grades[selectedSemester, i, 1].PadRight(9), " ║ ", averages[selectedSemester, i].PadRight(4), "    ║ ", remarks[selectedSemester, i].PadRight(10), " ║\n" }, Colors, new int[] { 0, 2, 0, 2, 0, 2, 0, 2, 0, midTermColor, 0, finalTermColor, 0, 2, 0, remarksColor, 0 });
                                     }
                                     PrintColor(gradesTableTBot, Colors, gradesTableBotColorIndexes);
 
@@ -645,7 +858,7 @@ namespace StudentGradesManagementSystem
                                         }
                                         else if (double.TryParse(input, out grade))
                                         {
-                                            if ((grade >= 1 && grade <= 5) || grade == 8.8 || grade == 9.9)
+                                            if ((grade >= 1 && grade <= 3) || grade == 5.0 || grade == 8.8 || grade == 9.9 || (!subCon && grade > 3 && grade < 5))
                                                 SetGrade(student, selectedSemester, selectedSubject, selectedTerm, grade.ToString());
                                             else
                                                 invalidGrade = true;
@@ -684,7 +897,6 @@ namespace StudentGradesManagementSystem
                         Console.Clear();
                     }
                     student = -1;
-                    op = -1;
                 }
                 else if (op == 3)
                 {
@@ -709,15 +921,18 @@ namespace StudentGradesManagementSystem
 
                             for (int i = 0; i < SUBJECTS.GetLength(1); i++)
                             {
-                                string[] subject = { padLeft + "║ ", "[" + (i + 1).ToString().PadLeft(2, '0') + "] " + (SUBJECTS[0, i, 0].PadRight(12) + Truncate(SUBJECTS[0, i, 1], 22)).PadRight(37), " ║  ║ ", "[" + (i + 1 + SUBJECTS.GetLength(1)).ToString().PadLeft(2, '0') + "] " + (SUBJECTS[1, i, 0].PadRight(12) + Truncate(SUBJECTS[1, i, 1], 22)).PadRight(37), " ║\n" };
-                                PrintColor(subject, Colors, new int[] { 0, 2, 0, 2, 0 });
+                                int color = 2;
+                                //if (i % 2 == 0)
+                                //    color = 8;
+                                string[] subject = { padLeft + "║ ", "[" + (i + 1).ToString().PadLeft(2, '0') + "] " + Truncate(SUBJECTS[0, i, 0], 12) + Truncate(SUBJECTS[0, i, 1], 25), " ║  ║ ", "[" + (i + 1 + SUBJECTS.GetLength(1)).ToString().PadLeft(2, '0') + "] " + Truncate(SUBJECTS[1, i, 0], 12) + Truncate(SUBJECTS[1, i, 1], 25), " ║\n" };
+                                PrintColor(subject, Colors, new int[] { 0, color, 0, color, 0 });
                             }
 
                             Console.ForegroundColor = ConsoleColor.Cyan;
                             Console.WriteLine(padLeft + "╚════════════════════════════════════════════╝  ╚════════════════════════════════════════════╝\n");
                             Console.ResetColor();
 
-                            Console.Write(padLeft + "➤ Enter Option/Code or 'Q' to exit: ");
+                            Console.Write(padLeft + "➤ Enter Option/Code ('Q' to exit): ");
                             string input = Console.ReadLine().ToLower();
 
                             int option;
@@ -755,7 +970,7 @@ namespace StudentGradesManagementSystem
                             string[] grades =
                             {
                                 padLeft + "╔══════════════════════════════════════════════════════════════════════════╦══════════════════╗\n",
-                                padLeft + "║ ", "Subject: ", (SUBJECTS[semester, selectedSubject, 0] + "   " + SUBJECTS[semester, selectedSubject, 1]).PadRight(63), " ║     ", "Units: ", "3", "     ║\n",
+                                padLeft + "║ ", "Subject: ", Truncate(SUBJECTS[semester, selectedSubject, 0] + "   " + SUBJECTS[semester, selectedSubject, 1], 63), " ║     ", "Units: ", "3", "     ║\n",
                                 padLeft + "╚══════════════════════════════════════════════════════════════════════════╩══════════════════╝\n",
                                 padLeft + "╔══════════════╦═════════════════════════════════╦═════════╦═══════════╦═════════╦════════════╗\n",
                                 padLeft + "║ ", "ID", "           ║ ", "Name", "                            ║ ", "MidTerm", " ║ ", "FinalTerm", " ║ ", "Average", " ║ ", "Remarks", "    ║\n",
@@ -831,19 +1046,22 @@ namespace StudentGradesManagementSystem
 
                                     if (average > 3)
                                     {
-                                        averageStr = "5.0";
-                                        remarks = "PASSED";
-                                        colorIndex[11] = 4;
+                                        if (subAvgCon)
+                                            averageStr = "5.0";
+                                        else
+                                            averageStr = average.ToString("F2");
+                                        remarks = "FAILED";
+                                        colorIndex[11] = 5;
                                     }
                                     else
                                     {
                                         averageStr = average.ToString("F2");
-                                        remarks = "FAILED";
-                                        colorIndex[11] = 5;
+                                        remarks = "PASSED";
+                                        colorIndex[11] = 4;
                                     }
                                 }
 
-                                PrintColor(new string[] { padLeft + "║ ", Truncate(STUDENTS[i, 0], 9), " ║ ", Truncate(STUDENTS[i, 1], 28), " ║ ", midTermStr.PadRight(7), " ║ ", finalTermStr.PadRight(9), " ║ ", averageStr.PadRight(7), " ║ ", remarks.PadRight(10), " ║\n" }, Colors, colorIndex);
+                                PrintColor(new string[] { padLeft + "║ ", Truncate(STUDENTS[i, 0], 12), " ║ ", Truncate(STUDENTS[i, 1], 31), " ║ ", midTermStr.PadRight(7), " ║ ", finalTermStr.PadRight(9), " ║ ", averageStr.PadRight(7), " ║ ", remarks.PadRight(10), " ║\n" }, Colors, colorIndex);
 
                             }
 
@@ -862,10 +1080,82 @@ namespace StudentGradesManagementSystem
                 else if (op == 4)
                 {
                     bool loop = true;
+                    bool firstAttempt = true;
 
                     while (loop)
                     {
-                        student = PickStudent();
+                        if (student == -1)
+                        {
+                            string padLeft = GetPadding(52);
+
+                            string[] labels =
+                            {
+                                padLeft + "╔════╦══════════════╦══════════════════════════════╗\n",
+                                padLeft + "║ ", "No", " ║ ", "ID", "           ║ ", "Name", "                         ║\n",
+                                padLeft + "╠════╬══════════════╬══════════════════════════════╣\n"
+                            };
+
+                            PrintColor(labels, Colors, new int[] { 0, 0, 1, 0, 1, 0, 1, 0, 0 });
+
+                            for (int i = 0; i < STUDENTS.GetLength(0); i++)
+                            {
+                                PrintColor(new string[] { padLeft + "║ ", (i + 1).ToString().PadLeft(2, '0'), " ║ ", Truncate(STUDENTS[i, 0], 12), " ║ ", Truncate(STUDENTS[i, 1], 28), " ║\n" }, Colors, new int[] { 0, 2, 0, 2, 0, 2, 0 });
+                            }
+
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine(padLeft + "╚════╩══════════════╩══════════════════════════════╝\n");
+                            Console.ResetColor();
+
+                            string input = "";
+                            try
+                            {
+                                if (!firstAttempt)
+                                {
+                                    Console.ForegroundColor = ConsoleColor.Red;
+                                    Console.WriteLine(padLeft + "✗ Not found. Try again.");
+                                    Console.ResetColor();
+                                }
+                                Console.Write(padLeft + "➤ Enter No/ID/Name ('Q' to exit): ");
+                                input = Console.ReadLine().ToLower();
+
+                                if (input == "q")
+                                {
+                                    Console.Clear();
+                                    op = -1;
+                                    break;
+                                }
+                                int option = int.Parse(input);
+
+                                if (option > 0 && option <= STUDENTS.GetLength(0))
+                                {
+                                    Console.Clear();
+                                    student = option - 1;
+                                    break;
+                                }
+                            }
+                            catch (Exception)
+                            {
+
+                            }
+
+                            for (int i = 0; i < STUDENTS.GetLength(0); i++)
+                            {
+                                if (input == STUDENTS[i, 0].ToLower() || input == STUDENTS[i, 1].ToLower())
+                                {
+                                    student = i;
+                                    break;
+                                }
+                            }
+
+                            if (student != -1)
+                            {
+                                Console.Clear();
+                                break;
+                            }
+
+                            Console.Clear();
+                            firstAttempt = false;
+                        }
 
                         if (student != -1)
                         {
@@ -933,12 +1223,14 @@ namespace StudentGradesManagementSystem
                                             }
                                             STUDENTS = update;
 
+                                            student = -1;
                                             continueDel = true;
                                             Console.Clear();
                                             continue;
                                         }
                                         else if (option == 2)
                                         {
+                                            student = -1;
                                             loop = false;
                                             break;
                                         }
@@ -976,6 +1268,7 @@ namespace StudentGradesManagementSystem
 
                                         if (input == "q")
                                         {
+                                            op = -1;
                                             loop = false;
                                             break;
                                         }
@@ -999,6 +1292,9 @@ namespace StudentGradesManagementSystem
                         else
                             break;
                     }
+                }
+                else
+                {
                     op = -1;
                 }
             }
@@ -1034,139 +1330,6 @@ namespace StudentGradesManagementSystem
             STUDENTS[studentIndex, column] = grade;
         }
 
-        public static int PickStudent(int page = 1)
-        {
-            if (STUDENTS.GetLength(0) == 0)
-            {
-                Console.CursorVisible = false;
-                Console.ForegroundColor = ConsoleColor.Red;
-                CenterPrint("There is no students yet.");
-                Console.ResetColor();
-                Console.WriteLine("\n");
-                CenterPrint("Press any key to return...");
-                Console.ReadKey();
-                Console.Clear();
-                Console.CursorVisible = true;
-                return -1;
-            }
-
-            int max = 9;
-            int pages = Convert.ToInt32(Math.Ceiling(STUDENTS.GetLength(0) * 1m / max));
-            int pickedOption = -1;
-
-            while (pickedOption == -1)
-            {
-                string[] options;
-                int index = 0;
-
-                if (pages > 1)
-                {
-                    options = new string[max];
-
-                    for (int i = 0; i < max; i++)
-                    {
-                        if (max * (page - 1) + i < STUDENTS.GetLength(0))
-                        {
-                            options[i] = STUDENTS[max * (page - 1) + i, 1];
-                            index++;
-                        }
-                    }
-                }
-                else
-                {
-                    options = new string[STUDENTS.GetLength(0)];
-
-                    for (int i = 0; i < STUDENTS.GetLength(0); i++)
-                    {
-                        options[i] = STUDENTS[i, 1];
-                        index++;
-                    }
-                }
-
-                int boxWidth = 40;
-                string padLeft = GetPadding(boxWidth);
-                bool firstAttempt = true;
-
-                while (true)
-                {
-                    Console.ForegroundColor = ConsoleColor.Cyan;
-                    Console.WriteLine(padLeft + "╔══════════════════════════════════════╗");
-                    Console.ForegroundColor = ConsoleColor.White;
-                    for (int i = 0; i < index; i++)
-                        PrintColor(new string[] { padLeft + "║   ", "[" + (i + 1) + "] ", options[i].PadRight(30), " ║\n" }, Colors, new int[] { 0, 1, 2, 0 });
-                    if (pages > 1)
-                    {
-                        if (page != 1)
-                            PrintColor(new string[] { padLeft + "║   ", "[A] Previous Page", "                  ║\n" }, Colors, new int[] { 0, 6, 0 });
-                        if (page != pages)
-                            PrintColor(new string[] { padLeft + "║   ", "[D] Next Page", "                      ║\n" }, Colors, new int[] { 0, 4, 0 });
-
-                    }
-                    PrintColor(new string[] { padLeft + "║   ", "[Q] Exit", "                           ║\n" }, Colors, new int[] { 0, 11, 0 });
-                    Console.ForegroundColor = ConsoleColor.Cyan;
-                    Console.WriteLine(padLeft + "╚══════════════════════════════════════╝\n");
-                    Console.ResetColor();
-
-                    string input = "";
-                    try
-                    {
-                        if (!firstAttempt)
-                        {
-                            Console.ForegroundColor = ConsoleColor.Red;
-                            Console.WriteLine(padLeft + "✗ Not found. Try again.");
-                            Console.ResetColor();
-                        }
-                        Console.Write(padLeft + "➤ Enter option/ID/name: ");
-                        input = Console.ReadLine();
-
-                        if (input == "q")
-                        {
-                            Console.Clear();
-                            return -1;
-                        }
-                        else if (pages > 1 && page != pages && input == "d")
-                        {
-                            page++;
-                            break;
-                        }
-                        else if (pages > 1 && page != 1 && input == "a")
-                        {
-                            page--;
-                            break;
-                        }
-
-                        int option = int.Parse(input);
-
-                        if (option > 0 && option <= index)
-                        {
-                            Console.Clear();
-                            return option + max * (page - 1) - 1;
-                        }
-                    }
-                    catch (Exception)
-                    {
-
-                    }
-
-                    for (int i = 0; i < STUDENTS.GetLength(0); i++)
-                    {
-                        if (input == STUDENTS[i, 0] || input == STUDENTS[i, 1])
-                        {
-                            Console.Clear();
-                            return i;
-                        }
-                    }
-
-                    Console.Clear();
-                    firstAttempt = false;
-                }
-
-                Console.Clear();
-            }
-
-            return -1;
-        }
-
         public static int GetOperation()
         {
             while (true)
@@ -1182,7 +1345,7 @@ namespace StudentGradesManagementSystem
                     padLeft + "║   ", "[1] Add Student", "                    ║\n",
                     padLeft + "║   ", "[2] Manage Student Grades", "          ║\n",
                     padLeft + "║   ", "[3] View Grades by Subject", "         ║\n",
-                    //padLeft + "║   ", "[5] Search Students", "                ║\n",
+                    //padLeft + "║   ", "[4] All Students", "                   ║\n",
                     padLeft + "║   ", "[4] Delete Student", "                 ║\n",
                     padLeft + "║   ", "[5] Exit", "                           ║\n",
                     padLeft + "╚══════════════════════════════════════╝\n\n"
@@ -1211,11 +1374,11 @@ namespace StudentGradesManagementSystem
 
         public static string Truncate(string text, int maxLength)
         {
-            if (text.Length <= maxLength) return text.PadRight(maxLength + 3);
+            if (text.Length <= maxLength) return text.PadRight(maxLength);
 
             string newText = "";
 
-            for (int i = 0; i < maxLength; i++)
+            for (int i = 0; i < maxLength - 3; i++)
             {
                 newText += text[i];
             }
@@ -1251,7 +1414,8 @@ namespace StudentGradesManagementSystem
                     { "134", "Suki" },
                     { "135", "Appa" },
                     { "136", "Kyoshi" },
-                    { "137", "Korra" }
+                    { "137", "Korra" },
+                    { "138", "aei9aenatcba78efbtae6frta9e6fbta98fynave0u-ar9mvu8yb7eta6crvawcnae8vynveavtbaf8eavn-a7etv a6evtnaevn" }
                 };
 
             for (int i = 0; i < data.GetLength(0); i++)
@@ -1280,19 +1444,31 @@ namespace StudentGradesManagementSystem
         static Random _random = new Random();
         public static string GetWeightedRandomValue()
         {
-            string[] categories = { "1-5", "1-5", "1-5", "1-5", "1-5", "1-5", "1-5", "1-5", "1-5", "1-5", "1-5", "1-5", "1-5", "1-5", "1-5", "8.8", "9.9", "0" };
+            double failChance = 0.2;
+            double anomalyRoll = _random.NextDouble();
 
-            string selectedCategory = categories[_random.Next(categories.Length)];
+            // 1. Adjustable check for 5.0 failure rate
+            if (anomalyRoll < failChance) return "5.0";
 
-            if (selectedCategory == "1-5")
-            {
-                double min = 1.0;
-                double max = 5.0;
-                double val = _random.NextDouble() * (max - min) + min;
-                return Math.Round(val, 2).ToString();
-            }
-            else
-                return selectedCategory;
+            // Shift the remaining anomaly checks down
+            double remainingRoll = _random.NextDouble();
+            if (remainingRoll < 0.02) return "0";    // 2% chance
+            if (remainingRoll < 0.03) return "8.8";  // 1% chance
+            if (remainingRoll < 0.04) return "9.9";  // 1% chance
+
+            // 2. Gaussian Bell Curve for passing grades (1.0 to 3.0)
+            double u1 = 1.0 - _random.NextDouble();
+            double u2 = 1.0 - _random.NextDouble();
+            double randStdNormal = Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Sin(2.0 * Math.PI * u2);
+
+            // Mean = 2.1, StdDev = 0.45
+            double grade = 2.1 + (0.45 * randStdNormal);
+
+            // 3. Clamp values
+            if (grade < 1.0) grade = 1.0;
+            if (grade > 3.0) grade = 3.0;
+
+            return Math.Round(grade, 2).ToString();
         }
     }
 }
