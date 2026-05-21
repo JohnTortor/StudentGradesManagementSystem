@@ -939,6 +939,12 @@ namespace StudentGradesManagementSystem
                                             selectedSubject = -1;
                                             selectedTerm = 0;
                                         }
+                                        else if (input == "inc")
+                                            SetGrade(student, selectedSemester, selectedSubject, selectedTerm, "8.8");
+                                        else if (input == "drp")
+                                            SetGrade(student, selectedSemester, selectedSubject, selectedTerm, "9.9");
+                                        else if (input == "pnd")
+                                            SetGrade(student, selectedSemester, selectedSubject, selectedTerm, null);
                                         else if (double.TryParse(input, out grade))
                                         {
                                             if ((grade >= 1 && grade <= 3) || grade == 5.0 || grade == 8.8 || grade == 9.9 || (!subCon && grade > 3 && grade < 5))
