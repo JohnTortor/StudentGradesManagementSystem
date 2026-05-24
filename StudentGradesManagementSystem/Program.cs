@@ -839,6 +839,16 @@ namespace ConsoleApp1
                                             selectedSubject = -1;
                                             selectedTerm = 0;
                                         }
+                                        else if (input == "inc")
+                                            SetGrade(student, selectedSemester, selectedSubject, selectedTerm, "8.8");
+                                        else if (input == "drp" && selectedTerm == 0)
+                                        {
+                                            SetGrade(student, selectedSemester, selectedSubject, 0, "9.9");
+                                            SetGrade(student, selectedSemester, selectedSubject, 1, "9.9");
+                                            selectedTerm++;
+                                        }
+                                        else if (input == "ng" || input == "--")
+                                            SetGrade(student, selectedSemester, selectedSubject, selectedTerm, null);
                                         else if (double.TryParse(input, out grade))
                                         {
                                             if ((grade >= 1 && grade <= 3) || grade == 5.0 || grade == 8.8 || (selectedTerm == 0 && grade > 3 && grade <= 3.5) || (!subCon && grade > 3 && grade < 5))
