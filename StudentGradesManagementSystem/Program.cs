@@ -411,11 +411,11 @@ namespace ConsoleApp1
                                     new int[] { 0, 0, prevColor, 0, nextColor, 0 }
                                 );
                             }
-                            
+
                             Console.ForegroundColor = ConsoleColor.Cyan;
                             if (pages > 1)
                                 Console.WriteLine(padLeft + "╚══════════════════════╩══════════════════════╝\n");
-                            else 
+                            else
                                 Console.WriteLine(padLeft + "╚══════════════╩══════════════════════════════╝\n");
                             Console.ResetColor();
 
